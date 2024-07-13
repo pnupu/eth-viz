@@ -89,6 +89,10 @@ const EthereumViz: React.FC = () => {
   }, [data]);
 
 
+  const deleteAll = () => {
+    storage.clearData();
+    window.location.reload();
+  }
 
   useEffect(() => {
     if (data && svgRef.current) {
@@ -288,7 +292,7 @@ const EthereumViz: React.FC = () => {
     .attr("class", "link-visible")
     .attr("stroke", "#999")
     .attr("stroke-opacity", 0.6)
-    .attr("stroke-width", d =>  2)
+    .attr("stroke-width", d =>  1)
     .attr("marker-end", "url(#end)");
 
   // Update nodes
@@ -398,7 +402,9 @@ const EthereumViz: React.FC = () => {
 
   return (
     <div className="relative w-full h-[600px]">
-      <div className="absolute top-[-80px] left-4 bg-white p-4 rounded-lg shadow-lg">
+      <div className="absolute top-[-80px] left-4 gap-2 flex flex-row">
+        <div className="bg-white p-4 rounded-lg shadow-lg">
+
         <input
           type="text"
           value={newWalletAddress}
@@ -413,7 +419,17 @@ const EthereumViz: React.FC = () => {
         >
           {isLoadingAdditionalData || loading ? 'Loading' : 'Add Wallet'}
         </button>
+        </div>
+        <div className=" bg-white p-4 rounded-lg shadow-lg">
+      <button
+          onClick={deleteAll}
+          className="bg-red-500 text-white px-4 py-2 rounded"
+        >
+          Delete All Nodes
+        </button>
+      </div> 
       </div>
+      
       <svg ref={svgRef} className="w-full h-full">
       <text x="50%" y="50" textAnchor="middle" className="text-4xl font-bold">
           Ethereum Data Visualization

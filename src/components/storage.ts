@@ -54,5 +54,8 @@ export const storage = {
   getWallets: (): string[] => {
     const storedData: StoredData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{"nodes":{},"links":[],"wallets":[]}');
     return storedData.wallets;
+  },
+  clearData: () => {
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
   }
 };
