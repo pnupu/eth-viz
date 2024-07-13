@@ -69,7 +69,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({
         onClick={() => onDeleteNode(node.address)}
         disabled={isLoading}
       >
-        Delete Node
+        Delete Address
       </button>
     </div>
   );
