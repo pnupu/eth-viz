@@ -27,7 +27,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({
   const information = blacklist.find(wallet => wallet.address === node.address);
 
   return (
-    <div className="absolute top-4 right-4 bg-white p-4 rounded-lg shadow-lg w-100 max-h-[calc(100%-2rem)] overflow-y-auto">
+    <div className="absolute top-16 right-4 bg-white p-4 rounded-lg shadow-lg w-100 max-h-[calc(100%-2rem)] overflow-y-auto">
       <div className="flex justify-between items-center mb-2">
         <h2 className="text-xl font-bold">Node Details</h2>
         <button onClick={onClose} className="text-gray-600 hover:text-gray-900">&times;</button>
