@@ -91,7 +91,7 @@ const EthereumViz: React.FC = () => {
 
   const deleteAll = () => {
     storage.clearData();
-    window.location.reload();
+    setData({ nodes: [], links: [] });
   }
 
   useEffect(() => {
@@ -159,7 +159,7 @@ const EthereumViz: React.FC = () => {
         // Add or update nodes
         [fromAddress, toAddress].forEach(address => {
           if (!newNodes[address] && !currentData.nodes.some(n => n.id === address)) {
-            newNodes[address] = { id: address, address: address, transactions: 0 };
+            newNodes[address] = { id: address, address: address, transactions: 0, color: "green"};
           }
           if (newNodes[address]) {
             newNodes[address].transactions++;
@@ -225,10 +225,37 @@ const EthereumViz: React.FC = () => {
     }
   };
 
+  const handleDeleteNode = (address: string) => {
+    if (window.confirm(`Are you sure you want to delete the node with address ${address}?`)) {
+      setData(prevData => {
+        // Remove the node
+        const updatedNodes = prevData.nodes.filter(node => node.id !== address);
+  
+        // Remove all links connected to this node
+        const updatedLinks = prevData.links.filter(link => 
+          link.source !== address && link.target !== address &&
+          (link.source as any).id !== address && (link.target as any).id !== address
+        );
+  
+        const updatedData = { nodes: updatedNodes, links: updatedLinks };
+        
+        // Remove the wallet from storage
+        storage.removeWallet(address);
+        
+        // Trigger visualization update
+        setTimeout(() => createVisualization(updatedData), 0);
+  
+        return updatedData;
+      });
+  
+      setSelectedNode(null); // Close the info panel
+    }
+  };
+  
   const createVisualization = (data: Data) => {
     const svg = d3.select(svgRef.current);
-    const width = 800;
-    const height = 600;
+    const width = svg.node()?.getBoundingClientRect().width || 800;
+    const height = svg.node()?.getBoundingClientRect().height || 600;
 
     // Clear any existing SVG content if it's the first render
     if (svg.select("g").empty()) {
@@ -266,9 +293,12 @@ const EthereumViz: React.FC = () => {
     }
 
     const simulation = d3.forceSimulation<Node>(data.nodes)
-      .force("link", d3.forceLink<Node, Link>(data.links).id(d => d.id).distance(150))
-      .force("charge", d3.forceManyBody().strength(-300))
-      .force("center", d3.forceCenter(width / 2, height / 2));
+    .force("link", d3.forceLink<Node, Link>(data.links).id(d => d.id).distance(150))
+    .force("charge", d3.forceManyBody().strength(-300))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("collision", d3.forceCollide().radius(30))
+    // .alphaDecay(0.01) // Slower cooling
+    // .velocityDecay(0.3); // More dampening
 
     const updateGraph = () => {
     // Update links
@@ -292,7 +322,7 @@ const EthereumViz: React.FC = () => {
     .attr("class", "link-visible")
     .attr("stroke", "#999")
     .attr("stroke-opacity", 0.6)
-    .attr("stroke-width", d =>  1)
+    .attr("stroke-width", d =>  2)
     .attr("marker-end", "url(#end)");
 
   // Update nodes
@@ -308,7 +338,7 @@ const EthereumViz: React.FC = () => {
 
   nodesEnter.append("circle")
     .attr("r", d => 10 + Math.sqrt(d.transactions) * 3)
-    .attr("fill", "#69b3a2")
+    .attr("fill", d => d.color)
     .attr("stroke", "#fff")
     .attr("stroke-width", 2);
 
@@ -445,6 +475,7 @@ const EthereumViz: React.FC = () => {
           transactions={transactions}
           isLoading={isLoadingAdditionalData}
           onClose={() => setSelectedNode(null)}
+          onDeleteNode={handleDeleteNode}
         />
       )}
       

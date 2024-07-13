@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import axios from 'axios';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -9,21 +10,21 @@ export async function GET(request: Request) {
   }
 
   try {
-    const url = new URL(`https://api.1inch.dev/history/v2.0/history/${address}/events`);
-    url.searchParams.append('chainId', '1');
+    const url = `https://api.1inch.dev/history/v2.0/history/${address}/events`;
 
-    const response = await fetch(url.toString(), {
+    const config = {
       headers: {
         'Authorization': `Bearer ${process.env.ONEINCH_API_KEY}`
+      },
+      params: {
+        'chainId': '1',
+        'limit': '15'
       }
-    });
+    };
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch data from 1inch');
-    }
+    const response = await axios.get(url, config);
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(response.data);
   } catch (error) {
     console.error('Error fetching data from 1inch:', error);
     return NextResponse.json({ error: 'Failed to fetch data from 1inch' }, { status: 500 });

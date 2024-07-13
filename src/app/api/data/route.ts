@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
-
+import { Node } from '@/components/types'
+import { blacklist } from '@/app/data/banned';
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const address = searchParams.get('address');
@@ -27,7 +28,8 @@ async function fetch1inchData(address: string) {
       "Authorization": `Bearer ${process.env.ONEINCH_API_KEY}`
     },
     params: {
-      "chainId": "1"
+      "chainId": "1",
+      "limit": "15"
     }
   };
   
@@ -60,12 +62,7 @@ interface TransactionEvent {
     eventOrderInTransaction: number;
   }
 
-  
-  interface Node extends d3.SimulationNodeDatum {
-    id: string;
-    address: string;
-    transactions: number;
-  }
+
   
   interface Link extends d3.SimulationLinkDatum<Node> {
     source: string;
@@ -121,12 +118,7 @@ interface TransactionEvent {
   interface ApiResponse {
     items: TransactionItem[];
   }
-  
-  interface Node extends d3.SimulationNodeDatum {
-    id: string;
-    address: string;
-    transactions: number;
-  }
+
   
   interface Link extends d3.SimulationLinkDatum<Node> {
     source: string;
@@ -143,60 +135,59 @@ interface TransactionEvent {
     links: Link[];
   }
   
-function processData(data: ApiResponse): ProcessedData {
-  const nodes: { [key: string]: Node } = {};
-  const links: Link[] = [];
-
-  data.items.forEach((item) => {
-    item.details.tokenActions.forEach((action) => {
-      const { fromAddress, toAddress, address: tokenAddress, amount, standard, priceToUsd } = action;
-
-      // Add or update nodes
-      if (!nodes[fromAddress]) {
-        nodes[fromAddress] = { id: fromAddress, address: fromAddress, transactions: 0 };
-      }
-      if (!nodes[toAddress]) {
-        nodes[toAddress] = { id: toAddress, address: toAddress, transactions: 0 };
-      }
-      nodes[fromAddress].transactions++;
-      nodes[toAddress].transactions++;
-
-      // Calculate value in USD
-      const value = Number(amount) / 1e18 * (priceToUsd || 1);
-
-      // Add link
-      links.push({
-        source: fromAddress,
-        target: toAddress,
-        value: value,
-        transactionHash: item.details.txHash,
-        tokenAddress: tokenAddress,
-        tokenStandard: standard,
-        amount: amount,
+  function processData(data: ApiResponse): ProcessedData {
+    const nodes: { [key: string]: Node } = {};
+    const links: Link[] = [];
+  
+    data.items.forEach((item) => {
+      item.details.tokenActions.forEach((action) => {
+        const { fromAddress, toAddress, address: tokenAddress, amount, standard, priceToUsd } = action;
+  
+        const blacklistAddresses = blacklist.map(wallet => wallet.address);
+        // Add or update nodes
+        [fromAddress, toAddress].forEach(address => {
+          if (!nodes[address]) {
+            nodes[address] = {
+              id: address,
+              address: address,
+              transactions: 0,
+              color: blacklistAddresses.includes(address) ? 'black' : '#69b3a2'
+            };
+          }
+          nodes[address].transactions++;
+        });
+  
+        // Calculate value in USD
+        const value = Number(amount) * (priceToUsd || 1);
+  
+        // Add link
+        links.push({
+          source: fromAddress,
+          target: toAddress,
+          value: value,
+          transactionHash: item.details.txHash,
+          tokenAddress: tokenAddress,
+          tokenStandard: standard,
+          amount: amount,
+        });
       });
     });
-  });
-
-  // Combine links with the same source, target, and token
-  const combinedLinks = links.reduce((acc, link) => {
-    const existingLink = acc.find(l => 
-      l.source === link.source && 
-      l.target === link.target && 
-      l.tokenAddress === link.tokenAddress
-    );
-
-    if (existingLink) {
-      existingLink.value += link.value;
-      existingLink.amount = (BigInt(existingLink.amount) + BigInt(link.amount)).toString();
-    } else {
-      acc.push(link);
-    }
-
-    return acc;
-  }, [] as Link[]);
-
-  return {
-    nodes: Object.values(nodes),
-    links: combinedLinks
-  };
-}
+  
+    // Color nodes connected to blacklisted addresses
+    Object.values(nodes).forEach(node => {
+      if (node.color === 'black') {
+        links.forEach(link => {
+          if (link.source === node.id) {
+            nodes[link.target as string].color = 'red';
+          } else if (link.target === node.id) {
+            nodes[link.source as string].color = 'red';
+          }
+        });
+      }
+    });
+  
+    return {
+      nodes: Object.values(nodes),
+      links: links
+    };
+  }

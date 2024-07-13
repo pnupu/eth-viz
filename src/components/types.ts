@@ -4,6 +4,7 @@ export interface Node extends d3.SimulationNodeDatum {
   id: string;
   address: string;
   transactions: number;
+  color: string;
 }
 
 export interface Link extends d3.SimulationLinkDatum<Node> {

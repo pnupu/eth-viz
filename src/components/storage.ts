@@ -57,5 +57,34 @@ export const storage = {
   },
   clearData: () => {
     localStorage.removeItem(LOCAL_STORAGE_KEY);
-  }
+  },
+  removeWallet: (address: string) => {
+    const storedData: StoredData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{"nodes":{},"links":[],"wallets":[]}');
+    
+    // Remove the wallet from the wallets array
+    storedData.wallets = storedData.wallets.filter(wallet => wallet !== address);
+
+    // Remove the node associated with this wallet
+    delete storedData.nodes[address];
+
+    // Remove all links connected to this node
+    storedData.links = storedData.links.filter(link => 
+      link.source !== address && link.target !== address
+    );
+
+    // Check for any nodes with no connections and remove them
+    const connectedNodes = new Set<string>();
+    storedData.links.forEach(link => {
+      connectedNodes.add(link.source);
+      connectedNodes.add(link.target);
+    });
+
+    Object.keys(storedData.nodes).forEach(nodeId => {
+      if (!connectedNodes.has(nodeId)) {
+        delete storedData.nodes[nodeId];
+      }
+    });
+
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(storedData));
+  },
 };
