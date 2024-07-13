@@ -1,12 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 
-export async function GET() {
-  const address = '0xD36e5e84eAfbD10eD0F718b789457848EA6D121B'; // Example address
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
+  const address = searchParams.get('address');
+
+  if (!address) {
+    return NextResponse.json({ error: 'Address is required' }, { status: 400 });
+  }
+
   try {
     const data1inch = await fetch1inchData(address);
-    // const dataBlockscout = await fetchBlockscoutData(address);
-    
     const processedData = processData(data1inch);
     
     return NextResponse.json(processedData);
@@ -33,14 +37,12 @@ async function fetch1inchData(address: string) {
   } catch (error: any) {
     if (error.response && error.response.status === 429) {
       console.error('Rate limit exceeded. Waiting before retrying...');
-      // Wait for 5 seconds before retrying
       await new Promise(resolve => setTimeout(resolve, 5000));
       return fetch1inchData(address); // Retry the request
     }
     throw error;
   }
 }
-
 
 interface TransactionEvent {
     timeMs: number;
@@ -160,7 +162,7 @@ function processData(data: ApiResponse): ProcessedData {
       nodes[toAddress].transactions++;
 
       // Calculate value in USD
-      const value = Number(amount) * (priceToUsd || 1);
+      const value = Number(amount) / 1e18 * (priceToUsd || 1);
 
       // Add link
       links.push({

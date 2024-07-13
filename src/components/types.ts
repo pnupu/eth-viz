@@ -11,7 +11,11 @@ export interface Link extends d3.SimulationLinkDatum<Node> {
   target: string;
   value: number;
   transactionHash: string;
+  tokenAddress: string;
+  tokenStandard: string;
+  amount: string;
 }
+
 
 export interface Data {
   nodes: Node[];
@@ -20,4 +24,42 @@ export interface Data {
 
 export interface CachedData extends Data {
   timestamp: number;
+}
+
+export interface TransactionItem {
+  timeMs: number;
+  address: string;
+  type: number;
+  rating: string;
+  direction: string;
+  details: TransactionDetails;
+  id: string;
+  eventOrderInTransaction: number;
+}
+export interface TransactionDetails {
+  txHash: string;
+  chainId: number;
+  blockNumber: number;
+  blockTimeSec: number;
+  status: string;
+  type: string;
+  tokenActions: TokenAction[];
+  fromAddress: string;
+  toAddress: string;
+  meta?: {
+    protocol?: string;
+  };
+  orderInBlock: number;
+  nonce: number;
+  feeInWei: string;
+  nativeTokenPriceToUsd: number | null;
+}
+export interface TokenAction {
+  address: string;
+  standard: string;
+  fromAddress: string;
+  toAddress: string;
+  amount: string;
+  direction: string;
+  priceToUsd: number;
 }

@@ -35,7 +35,10 @@ const TransactionInfoPanel: React.FC<TransactionInfoPanelProps> = ({ transaction
 
   return (
     <div className="absolute top-4 right-4 bg-white p-4 rounded-lg shadow-lg w-100 max-h-[calc(100%-2rem)] overflow-y-auto">
+      <div className="flex justify-between items-center mb-2">
       <h2 className="text-xl font-bold mb-2">Transaction Details</h2>
+      <button onClick={onClose} className="text-gray-600 hover:text-gray-900">&times;</button>
+      </div>
       <p><strong>Hash:</strong> <a target="_blank" href={`https://eth.blockscout.com/tx/${transaction.hash}` }>{transaction.hash}</a></p>
       <p><strong>Status:</strong> {transaction.status}</p>
       <p><strong>Block:</strong> {transaction.block}</p>
@@ -71,12 +74,6 @@ const TransactionInfoPanel: React.FC<TransactionInfoPanelProps> = ({ transaction
         </div>
       )}
 
-      <button 
-        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
-        onClick={onClose}
-      >
-        Close
-      </button>
     </div>
   );
 };

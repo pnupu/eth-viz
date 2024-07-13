@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { Node, Link, Data } from './types';
+import { Node, Link, Data, TransactionItem } from './types';
 import { storage } from './storage';
 import InfoPanel from './InfoPanel';
 import TransactionInfoPanel from './TransactionInfoPanel';
@@ -11,49 +11,83 @@ const EthereumViz: React.FC = () => {
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomGroupRef = useRef<SVGGElement | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [data, setData] = useState<Data | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Data>({ nodes: [], links: [] });
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [blockscoutData, setBlockscoutData] = useState<any | null>(null);
   const [transactions, setTransactions] = useState<any[] | null>(null);
   const [isLoadingAdditionalData, setIsLoadingAdditionalData] = useState(false);
   const [selectedLink, setSelectedLink] = useState<Link | null>(null);
   const [transactionData, setTransactionData] = useState<any | null>(null);
+  const [newWalletAddress, setNewWalletAddress] = useState('');
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+    // Load stored data on initial render
+    const storedData = storage.getData();
+    // setData(storedData);
 
-      try {
-        // Check for cached data
-        const cachedData = storage.getData();
-        if (cachedData) {
-          setData(cachedData);
-          setLoading(false);
-          return;
-        }
-
-        // If no cached data, fetch from API
-        const response = await fetch('/api/data');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const newData: Data = await response.json();
-        
-        // Save the new data to cache
-        storage.saveData(newData);
-        
-        setData(newData);
-      } catch (e) {
-        setError(`Failed to fetch data: ${e instanceof Error ? e.message : String(e)}`);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    // Fetch data for all stored wallets
+    const wallets = storage.getWallets();
+    wallets.forEach(wallet => {
+      fetchData(wallet);
+      setTimeout(() => {}, 1000)
+    });
   }, []);
+
+  useEffect(() => {
+    // fetchData('0xD36e5e84eAfbD10eD0F718b789457848EA6D121B'); // Or any other address
+  }, []);
+
+  const fetchData = async (address: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/data?address=${address}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const newData: Data = await response.json();
+      
+      setData(prevData => {
+        const updatedData = {
+          nodes: [...prevData.nodes, ...newData.nodes.filter(node => 
+            !prevData.nodes.some(n => n.id === node.id)
+          )],
+          links: [...prevData.links, ...newData.links.filter(link => 
+            !prevData.links.some(l => 
+              l.source === link.source && 
+              l.target === link.target && 
+              l.tokenAddress === link.tokenAddress
+            )
+          )]
+        };
+        storage.saveData(updatedData, address);
+        return updatedData;
+      });
+    } catch (e) {
+      setError(`Failed to fetch data: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddWallet = async () => {
+    if (!newWalletAddress || !/^0x[a-fA-F0-9]{40}$/.test(newWalletAddress)) {
+      alert('Please enter a valid Ethereum address');
+      return;
+    }
+
+    await fetchData(newWalletAddress);
+    setNewWalletAddress('');
+  };
+
+  useEffect(() => {
+    if (data.nodes.length > 0 && svgRef.current) {
+      createVisualization(data);
+    }
+  }, [data]);
+
 
 
   useEffect(() => {
@@ -90,21 +124,19 @@ const EthereumViz: React.FC = () => {
       setIsLoadingAdditionalData(false);
     }
   };
+
   const fetchTransactions = async (address: string) => {
     setIsLoadingAdditionalData(true);
     try {
       const response = await fetch(`/api/transactions?address=${address}`);
       if (!response.ok) throw new Error('Failed to fetch transactions');
-      const newData = await response.json();
+      const newData: { items: TransactionItem[] } = await response.json();
       
-      // Update transactions state
-      setTransactions(newData.items);
-      
-      // Store transactions in localStorage
-      localStorage.setItem(`transactions_${address}`, JSON.stringify(newData.items));
-      
-      // Update graph with new transactions
-      updateGraphWithTransactions(address, newData.items);
+      setData(prevData => {
+        const updatedData = updateGraphWithTransactions(address, newData.items, prevData);
+        storage.saveData(updatedData, address);
+        return updatedData;
+      });
     } catch (error) {
       console.error('Error fetching transactions:', error);
     } finally {
@@ -112,51 +144,67 @@ const EthereumViz: React.FC = () => {
     }
   };
 
-  const updateGraphWithTransactions = (sourceAddress: string, transactions: any[]) => {
-    const newNodes: Node[] = [];
+  const updateGraphWithTransactions = (sourceAddress: string, transactions: TransactionItem[], currentData: Data): Data => {
+    const newNodes: { [key: string]: Node } = {};
     const newLinks: Link[] = [];
   
-    transactions.forEach(tx => {
-      const targetAddress = tx.details.toAddress;
-      
-      // Add source node if it doesn't exist
-      if (!data?.nodes.some(n => n.id === sourceAddress) && !newNodes.some(n => n.id === sourceAddress)) {
-        newNodes.push({
-          id: sourceAddress,
-          address: sourceAddress,
-          transactions: 1
-        });
-      }
+    transactions.forEach((item) => {
+      item.details.tokenActions.forEach((action) => {
+        const { fromAddress, toAddress, address: tokenAddress, amount, standard, priceToUsd } = action;
   
-      // Add target node if it doesn't exist
-      if (!data?.nodes.some(n => n.id === targetAddress) && !newNodes.some(n => n.id === targetAddress)) {
-        newNodes.push({
-          id: targetAddress,
-          address: targetAddress,
-          transactions: 1
+        // Add or update nodes
+        [fromAddress, toAddress].forEach(address => {
+          if (!newNodes[address] && !currentData.nodes.some(n => n.id === address)) {
+            newNodes[address] = { id: address, address: address, transactions: 0 };
+          }
+          if (newNodes[address]) {
+            newNodes[address].transactions++;
+          } else {
+            const existingNode = currentData.nodes.find(n => n.id === address);
+            if (existingNode) {
+              existingNode.transactions++;
+            }
+          }
         });
-      }
   
-      // Add new link
-      newLinks.push({
-        source: sourceAddress,
-        target: targetAddress,
-        value: Number(tx.details.tokenAmount) || 1, // Use token amount as value, default to 1 if not available
-        transactionHash: tx.id
+        // Calculate value in USD
+        const value = Number(amount) /1e18 * (priceToUsd || 1);
+  
+        // Add new link
+        newLinks.push({
+          source: fromAddress,
+          target: toAddress,
+          value: value,
+          transactionHash: item.details.txHash,
+          tokenAddress: tokenAddress,
+          tokenStandard: standard,
+          amount: amount,
+        });
       });
     });
   
-    // Update the data state
-    setData(prevData => {
-      if (!prevData) return {
-        nodes: newNodes,
-        links: newLinks
-      };
-      return {
-        nodes: [...prevData.nodes, ...newNodes.filter(newNode => !prevData.nodes.some(n => n.id === newNode.id))],
-        links: [...prevData.links, ...newLinks]
-      };
-    });
+    // Combine new links with existing links
+    const combinedLinks = [...currentData.links, ...newLinks].reduce((acc, link) => {
+      const existingLink = acc.find(l => 
+        l.source === link.source && 
+        l.target === link.target && 
+        l.tokenAddress === link.tokenAddress
+      );
+  
+      if (existingLink) {
+        existingLink.value += link.value;
+        existingLink.amount = (BigInt(existingLink.amount) + BigInt(link.amount)).toString();
+      } else {
+        acc.push(link);
+      }
+  
+      return acc;
+    }, [] as Link[]);
+  
+    return {
+      nodes: [...currentData.nodes, ...Object.values(newNodes)],
+      links: combinedLinks
+    };
   };
 
   const fetchTransactionData = async (transactionHash: string) => {
@@ -240,7 +288,7 @@ const EthereumViz: React.FC = () => {
     .attr("class", "link-visible")
     .attr("stroke", "#999")
     .attr("stroke-opacity", 0.6)
-    .attr("stroke-width", d => Math.sqrt(1))
+    .attr("stroke-width", d =>  2)
     .attr("marker-end", "url(#end)");
 
   // Update nodes
@@ -350,6 +398,22 @@ const EthereumViz: React.FC = () => {
 
   return (
     <div className="relative w-full h-[600px]">
+      <div className="absolute top-[-80px] left-4 bg-white p-4 rounded-lg shadow-lg">
+        <input
+          type="text"
+          value={newWalletAddress}
+          onChange={(e) => setNewWalletAddress(e.target.value)}
+          placeholder="Enter wallet address"
+          className="border rounded px-2 py-1 mr-2"
+        />
+        <button
+          onClick={handleAddWallet}
+          disabled={isLoadingAdditionalData || loading}
+          className="bg-blue-500 text-white px-4 py-2 rounded disabled:bg-gray-400"
+        >
+          {isLoadingAdditionalData || loading ? 'Loading' : 'Add Wallet'}
+        </button>
+      </div>
       <svg ref={svgRef} className="w-full h-full">
       <text x="50%" y="50" textAnchor="middle" className="text-4xl font-bold">
           Ethereum Data Visualization
