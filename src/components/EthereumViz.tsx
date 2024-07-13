@@ -189,9 +189,6 @@ const EthereumViz: React.FC = () => {
       setZoomGroupRef(zoomGroup.node() as SVGGElement);
     }
 
-    // ...
-
-
     zoomGroup.append("defs").selectAll("marker")
       .data(["end"])
       .enter().append("marker")
@@ -222,16 +219,16 @@ const EthereumViz: React.FC = () => {
       .force("center", d3.forceCenter(width / 2, height / 2));
 
     const updateGraph = () => {
-  // Update links
-  const linkHitArea = linkGroup.selectAll<SVGLineElement, Link>(".link-hit-area")
-    .data(data.links, d => `${d.source}-${d.target}-${d.transactionHash}`);
+    // Update links
+    const linkHitArea = linkGroup.selectAll<SVGLineElement, Link>(".link-hit-area")
+      .data(data.links, d => `${d.source}-${d.target}-${d.transactionHash}`);
 
   linkHitArea.exit().remove();
 
   const linkHitAreaEnter = linkHitArea.enter().append("line")
     .attr("class", "link-hit-area")
     .style("stroke", "transparent")
-    .style("stroke-width", 20)
+    .style("stroke-width", 50)
     .on("click", handleLinkClick);
 
   const link = linkGroup.selectAll<SVGLineElement, Link>(".link-visible")
@@ -243,7 +240,7 @@ const EthereumViz: React.FC = () => {
     .attr("class", "link-visible")
     .attr("stroke", "#999")
     .attr("stroke-opacity", 0.6)
-    .attr("stroke-width", d => Math.sqrt(d.value))
+    .attr("stroke-width", d => Math.sqrt(1))
     .attr("marker-end", "url(#end)");
 
   // Update nodes
