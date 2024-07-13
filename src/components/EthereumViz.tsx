@@ -294,11 +294,12 @@ const EthereumViz: React.FC = () => {
 
     const simulation = d3.forceSimulation<Node>(data.nodes)
     .force("link", d3.forceLink<Node, Link>(data.links).id(d => d.id).distance(150))
-    .force("charge", d3.forceManyBody().strength(-300))
-    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("charge", d3.forceManyBody().strength(-300).distanceMax(300))
+    .force("center", d3.forceCenter(width / 2, height / 2).strength(0.02))
     .force("collision", d3.forceCollide().radius(30))
-    // .alphaDecay(0.01) // Slower cooling
-    // .velocityDecay(0.3); // More dampening
+    // .alphaDecay(0.01)
+    // .velocityDecay(0.3);
+
 
     const updateGraph = () => {
     // Update links
@@ -357,17 +358,32 @@ const EthereumViz: React.FC = () => {
 
     updateGraph();
 
-    simulation.on("tick", () => {
-      linkGroup.selectAll<SVGLineElement, Link>("line")
-        .attr("x1", d => (d.source as any).x)
-        .attr("y1", d => (d.source as any).y)
-        .attr("x2", d => (d.target as any).x)
-        .attr("y2", d => (d.target as any).y);
+    const tree = d3.quadtree<Node>()
+    .x(d => d.x!)
+    .y(d => d.y!)
+    .addAll(data.nodes);
 
-      nodeGroup.selectAll<SVGGElement, Node>(".node")
-        .attr("transform", d => `translate(${d.x!},${d.y!})`);
+  simulation.on("tick", () => {
+    tree.visit((quad) => {
+      if (!quad.length) {
+        const node = quad.data;
+        tree.remove(node);
+        node.x = Math.max(30, Math.min(width - 30, node.x!));
+        node.y = Math.max(30, Math.min(height - 30, node.y!));
+        tree.add(node);
+      }
+      return false;
     });
 
+    linkGroup.selectAll<SVGLineElement, Link>("line")
+      .attr("x1", d => (d.source as any).x)
+      .attr("y1", d => (d.source as any).y)
+      .attr("x2", d => (d.target as any).x)
+      .attr("y2", d => (d.target as any).y);
+
+    nodeGroup.selectAll<SVGGElement, Node>(".node")
+      .attr("transform", d => `translate(${d.x!},${d.y!})`);
+  });
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
       .on("zoom", (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
@@ -431,7 +447,7 @@ const EthereumViz: React.FC = () => {
   if (!data) return <div>No data available</div>;
 
   return (
-    <div className="relative w-full h-[600px]">
+    <div className="relative w-full h-[100vh]">
       <div className="absolute top-[-80px] left-4 gap-2 flex flex-row">
         <div className="bg-white p-4 rounded-lg shadow-lg">
 
