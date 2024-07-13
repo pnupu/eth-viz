@@ -159,7 +159,7 @@ const EthereumViz: React.FC = () => {
         // Add or update nodes
         [fromAddress, toAddress].forEach(address => {
           if (!newNodes[address] && !currentData.nodes.some(n => n.id === address)) {
-            newNodes[address] = { id: address, address: address, transactions: 0, color: "green"};
+            newNodes[address] = { id: address, address: address, transactions: 0, color: "#69b3a2"};
           }
           if (newNodes[address]) {
             newNodes[address].transactions++;
