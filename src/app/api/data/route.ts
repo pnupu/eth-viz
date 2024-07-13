@@ -29,7 +29,6 @@ async function fetch1inchData(address: string) {
   
   try {
     const response = await axios.get(url, config);
-    console.log(response)
     return response.data;
   } catch (error: any) {
     if (error.response && error.response.status === 429) {

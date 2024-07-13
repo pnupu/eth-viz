@@ -1,145 +1,15 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-
-interface Node extends d3.SimulationNodeDatum {
-  id: string;
-  address: string;
-  transactions: number;
-}
-
-interface Link extends d3.SimulationLinkDatum<Node> {
-  source: string;
-  target: string;
-  value: number;
-  transactionHash: string;
-}
-interface Data {
-  nodes: Node[];
-  links: Link[];
-}
-
-interface InfoPanelProps {
-  node: Node | null;
-}
-
-const LOCAL_STORAGE_KEY = 'ethereum_viz_data';
-const CACHE_EXPIRATION_TIME = 1000 * 60 * 60; // 1 hour in milliseconds
-
-interface CachedData extends Data {
-  timestamp: number;
-}
-
-const storage = {
-  saveData: (data: Data) => {
-    const cachedData: CachedData = {
-      ...data,
-      timestamp: Date.now()
-    };
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cachedData));
-  },
-  getData: (): Data | null => {
-    const cachedDataString = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!cachedDataString) return null;
-
-    const cachedData: CachedData = JSON.parse(cachedDataString);
-    if (Date.now() - cachedData.timestamp > CACHE_EXPIRATION_TIME) {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
-      return null;
-    }
-
-    const { timestamp, ...data } = cachedData;
-    return data;
-  }
-};
-
-interface InfoPanelProps {
-  node: Node | null;
-  onFetchTransactions: (address: string) => void;
-  blockscoutData: any | null;
-  transactions: any[] | null;
-  isLoading: boolean;
-}
-
-const InfoPanel: React.FC<InfoPanelProps> = ({ 
-  node, 
-  onFetchTransactions, 
-  blockscoutData, 
-  transactions, 
-  isLoading 
-}) => {
-  if (!node) return null;
-
-  return (
-    <div className="absolute top-4 right-4 bg-white p-4 rounded-lg shadow-lg w-106 max-h-[calc(100%-2rem)] overflow-y-auto">
-      <h2 className="text-xl font-bold mb-2">Node Details</h2>
-      <p><strong>Address:</strong> {node.address}</p>
-      <p><strong>Transactions:</strong> {node.transactions}</p>
-      
-      {blockscoutData && (
-        <div className="mt-4">
-          <h3 className="text-lg font-semibold">Blockscout Data</h3>
-          <p><strong>Balance:</strong> {Number(blockscoutData.coin_balance) / 1e18} ETH</p>
-          <p><strong>USD Value:</strong> ${(Number(blockscoutData.coin_balance) / 1e18 * Number(blockscoutData.exchange_rate)).toFixed(2)}</p>
-          <p><strong>Is Contract:</strong> {blockscoutData.is_contract ? 'Yes' : 'No'}</p>
-        </div>
-      )}
-
-      <button 
-        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
-        onClick={() => onFetchTransactions(node.address)}
-        disabled={isLoading}
-      >
-        {isLoading ? 'Loading...' : 'Fetch Transactions'}
-      </button>
-
-      {transactions && transactions.length > 0 && (
-        <div className="mt-4">
-          <h3 className="text-lg font-semibold">Recent Transactions</h3>
-          <ul className="list-disc pl-5">
-            {transactions.slice(0, 5).map((tx: any, index: number) => (
-              <li key={index}>
-                {tx.type === 0 ? 'Sent to' : 'Received from'}: {tx.type === 0 ? tx.details.toAddress : tx.details.fromAddress}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-};
-
-interface TransactionInfoPanelProps {
-  transaction: any | null;
-  onClose: () => void;
-}
-
-const TransactionInfoPanel: React.FC<TransactionInfoPanelProps> = ({ transaction, onClose }) => {
-  if (!transaction) return null;
-
-  console.log("hoi")
-  return (
-    <div className="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-lg w-96 max-h-[calc(100%-2rem)] overflow-y-auto">
-      <h2 className="text-xl font-bold mb-2">Transaction Details</h2>
-      <p><strong>Hash:</strong> {transaction.hash}</p>
-      <p><strong>From:</strong> {transaction.from.hash}</p>
-      <p><strong>To:</strong> {transaction.to.hash}</p>
-      <p><strong>Value:</strong> {Number(transaction.value) / 1e18} ETH</p>
-      <p><strong>Gas Used:</strong> {transaction.gas_used}</p>
-      <p><strong>Status:</strong> {transaction.status}</p>
-      <button 
-        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
-        onClick={onClose}
-      >
-        Close
-      </button>
-    </div>
-  );
-};
+import { Node, Link, Data } from './types';
+import { storage } from './storage';
+import InfoPanel from './InfoPanel';
+import TransactionInfoPanel from './TransactionInfoPanel';
 
 const EthereumViz: React.FC = () => {
   const svgRef = useRef<SVGSVGElement>(null);
+  const zoomGroupRef = useRef<SVGGElement | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
@@ -150,7 +20,6 @@ const EthereumViz: React.FC = () => {
   const [selectedLink, setSelectedLink] = useState<Link | null>(null);
   const [transactionData, setTransactionData] = useState<any | null>(null);
 
-
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -159,7 +28,6 @@ const EthereumViz: React.FC = () => {
       try {
         // Check for cached data
         const cachedData = storage.getData();
-        console.log(cachedData)
         if (cachedData) {
           setData(cachedData);
           setLoading(false);
@@ -168,7 +36,6 @@ const EthereumViz: React.FC = () => {
 
         // If no cached data, fetch from API
         const response = await fetch('/api/data');
-        console.log(response)
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -188,11 +55,18 @@ const EthereumViz: React.FC = () => {
     fetchData();
   }, []);
 
+
   useEffect(() => {
-    if (data) {
+    if (data && svgRef.current) {
       createVisualization(data);
     }
   }, [data]);
+
+  const setZoomGroupRef = useCallback((node: SVGGElement | null) => {
+    if (node !== null) {
+      zoomGroupRef.current = node;
+    }
+  }, []);
 
   useEffect(() => {
     if (selectedNode) {
@@ -216,19 +90,73 @@ const EthereumViz: React.FC = () => {
       setIsLoadingAdditionalData(false);
     }
   };
-
   const fetchTransactions = async (address: string) => {
     setIsLoadingAdditionalData(true);
     try {
       const response = await fetch(`/api/transactions?address=${address}`);
       if (!response.ok) throw new Error('Failed to fetch transactions');
-      const data = await response.json();
-      setTransactions(data.items);
+      const newData = await response.json();
+      
+      // Update transactions state
+      setTransactions(newData.items);
+      
+      // Store transactions in localStorage
+      localStorage.setItem(`transactions_${address}`, JSON.stringify(newData.items));
+      
+      // Update graph with new transactions
+      updateGraphWithTransactions(address, newData.items);
     } catch (error) {
       console.error('Error fetching transactions:', error);
     } finally {
       setIsLoadingAdditionalData(false);
     }
+  };
+
+  const updateGraphWithTransactions = (sourceAddress: string, transactions: any[]) => {
+    const newNodes: Node[] = [];
+    const newLinks: Link[] = [];
+  
+    transactions.forEach(tx => {
+      const targetAddress = tx.details.toAddress;
+      
+      // Add source node if it doesn't exist
+      if (!data?.nodes.some(n => n.id === sourceAddress) && !newNodes.some(n => n.id === sourceAddress)) {
+        newNodes.push({
+          id: sourceAddress,
+          address: sourceAddress,
+          transactions: 1
+        });
+      }
+  
+      // Add target node if it doesn't exist
+      if (!data?.nodes.some(n => n.id === targetAddress) && !newNodes.some(n => n.id === targetAddress)) {
+        newNodes.push({
+          id: targetAddress,
+          address: targetAddress,
+          transactions: 1
+        });
+      }
+  
+      // Add new link
+      newLinks.push({
+        source: sourceAddress,
+        target: targetAddress,
+        value: Number(tx.details.tokenAmount) || 1, // Use token amount as value, default to 1 if not available
+        transactionHash: tx.id
+      });
+    });
+  
+    // Update the data state
+    setData(prevData => {
+      if (!prevData) return {
+        nodes: newNodes,
+        links: newLinks
+      };
+      return {
+        nodes: [...prevData.nodes, ...newNodes.filter(newNode => !prevData.nodes.some(n => n.id === newNode.id))],
+        links: [...prevData.links, ...newLinks]
+      };
+    });
   };
 
   const fetchTransactionData = async (transactionHash: string) => {
@@ -249,12 +177,22 @@ const EthereumViz: React.FC = () => {
     const svg = d3.select(svgRef.current);
     const width = 800;
     const height = 600;
-  
-    // Clear any existing SVG content
-    svg.selectAll("*").remove();
-  
-    // Define arrow markers for edge direction
-    svg.append("defs").selectAll("marker")
+
+    // Clear any existing SVG content if it's the first render
+    if (svg.select("g").empty()) {
+      svg.selectAll("*").remove();
+    }
+
+    let zoomGroup = d3.select(zoomGroupRef.current) as d3.Selection<SVGGElement, unknown, null, undefined>;
+    if (zoomGroup.empty()) {
+      zoomGroup = svg.append("g").attr("class", "zoom-group") as d3.Selection<SVGGElement, unknown, null, undefined>;
+      setZoomGroupRef(zoomGroup.node() as SVGGElement);
+    }
+
+    // ...
+
+
+    zoomGroup.append("defs").selectAll("marker")
       .data(["end"])
       .enter().append("marker")
       .attr("id", String)
@@ -267,120 +205,142 @@ const EthereumViz: React.FC = () => {
       .append("path")
       .attr("d", "M0,-5L10,0L0,5")
       .attr("fill", "#999");
-  
+
+    let linkGroup = zoomGroup.select<SVGGElement>('.links');
+    if (linkGroup.empty()) {
+      linkGroup = zoomGroup.append("g").attr("class", "links");
+    }
+
+    let nodeGroup = zoomGroup.select<SVGGElement>('.nodes');
+    if (nodeGroup.empty()) {
+      nodeGroup = zoomGroup.append("g").attr("class", "nodes");
+    }
+
     const simulation = d3.forceSimulation<Node>(data.nodes)
       .force("link", d3.forceLink<Node, Link>(data.links).id(d => d.id).distance(150))
       .force("charge", d3.forceManyBody().strength(-300))
       .force("center", d3.forceCenter(width / 2, height / 2));
-  
-    const linkGroup = svg.append("g").attr("class", "links");
-  
-    // Create wider invisible lines for better click detection
-    const linkHitArea = linkGroup.selectAll(".link-hit-area")
-      .data(data.links)
-      .enter().append("line")
-      .attr("class", "link-hit-area")
-      .style("stroke", "transparent")
-      .style("stroke-width", 20)  // Wide area for clicking
-      .on("click", handleLinkClick);
-  
-    // Create visible links
-    const link = linkGroup.selectAll(".link-visible")
-      .data(data.links)
-      .enter().append("line")
-      .attr("class", "link-visible")
-      .attr("stroke", "#999")
-      .attr("stroke-opacity", 0.6)
-      .attr("stroke-width", d => Math.sqrt(d.value))
-      .attr("marker-end", "url(#end)");
-  
-    const node = svg.append("g")
-      .attr("stroke", "#fff")
-      .attr("stroke-width", 2)
-      .selectAll("circle")
-      .data(data.nodes)
-      .join("circle")
-      .attr("r", d => 10 + Math.sqrt(d.transactions) * 3)
-      .attr("fill", "#69b3a2")
-      .call(drag(simulation) as any)
-      .on("click", handleNodeClick);
-  
-    // Add labels to nodes
-    const label = svg.append("g")
-      .attr("class", "labels")
-      .selectAll("text")
-      .data(data.nodes)
-      .join("text")
-      .attr("text-anchor", "middle")
-      .attr("dominant-baseline", "central")
-      .text(d => d.id.substring(0, 6) + "...")
-      .attr("font-size", "10px")
-      .attr("fill", "#333");
-  
-    node.append("title")
-      .text(d => `${d.address}\nTransactions: ${d.transactions}`);
-  
+
+    const updateGraph = () => {
+  // Update links
+  const linkHitArea = linkGroup.selectAll<SVGLineElement, Link>(".link-hit-area")
+    .data(data.links, d => `${d.source}-${d.target}-${d.transactionHash}`);
+
+  linkHitArea.exit().remove();
+
+  const linkHitAreaEnter = linkHitArea.enter().append("line")
+    .attr("class", "link-hit-area")
+    .style("stroke", "transparent")
+    .style("stroke-width", 20)
+    .on("click", handleLinkClick);
+
+  const link = linkGroup.selectAll<SVGLineElement, Link>(".link-visible")
+    .data(data.links, d => `${d.source}-${d.target}-${d.transactionHash}`);
+
+  link.exit().remove();
+
+  const linkEnter = link.enter().append("line")
+    .attr("class", "link-visible")
+    .attr("stroke", "#999")
+    .attr("stroke-opacity", 0.6)
+    .attr("stroke-width", d => Math.sqrt(d.value))
+    .attr("marker-end", "url(#end)");
+
+  // Update nodes
+  const nodes = nodeGroup.selectAll<SVGGElement, Node>(".node")
+    .data(data.nodes, d => d.id);
+
+  nodes.exit().remove();
+
+  const nodesEnter = nodes.enter().append("g")
+    .attr("class", "node")
+    .call(drag(simulation) as any)
+    .on("click", handleNodeClick);
+
+  nodesEnter.append("circle")
+    .attr("r", d => 10 + Math.sqrt(d.transactions) * 3)
+    .attr("fill", "#69b3a2")
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 2);
+
+  nodesEnter.append("text")
+    .attr("text-anchor", "middle")
+    .attr("dominant-baseline", "central")
+    .text(d => d.id.substring(0, 6) + "...")
+    .attr("font-size", "10px")
+    .attr("fill", "#333");
+
+  // Update simulation
+  simulation.nodes(data.nodes);
+  simulation.force<d3.ForceLink<Node, Link>>("link")!.links(data.links);
+  simulation.alpha(1).restart();
+};
+
+    updateGraph();
+
     simulation.on("tick", () => {
-      linkHitArea
+      linkGroup.selectAll<SVGLineElement, Link>("line")
         .attr("x1", d => (d.source as any).x)
         .attr("y1", d => (d.source as any).y)
         .attr("x2", d => (d.target as any).x)
         .attr("y2", d => (d.target as any).y);
-  
-      link
-        .attr("x1", d => (d.source as any).x)
-        .attr("y1", d => (d.source as any).y)
-        .attr("x2", d => (d.target as any).x)
-        .attr("y2", d => (d.target as any).y);
-  
-      node
-        .attr("cx", d => d.x!)
-        .attr("cy", d => d.y!);
-  
-      label
-        .attr("x", d => d.x!)
-        .attr("y", d => d.y!);
+
+      nodeGroup.selectAll<SVGGElement, Node>(".node")
+        .attr("transform", d => `translate(${d.x!},${d.y!})`);
     });
-  
+
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 4])
+      .on("zoom", (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
+        zoomGroup.attr("transform", event.transform.toString());
+      });
+
+      svg.call(zoom as any);
+
+    // Add double-click to reset zoom
+    svg.on("dblclick.zoom", null);
+    svg.on("dblclick", (event) => {
+      event.preventDefault();
+      svg.transition().duration(750).call(zoom.transform as any, d3.zoomIdentity, d3.zoomTransform(svg.node()!).invert([width / 2, height / 2]));
+    });
 
     function handleNodeClick(event: MouseEvent, d: Node) {
-      event.stopPropagation(); // Prevent the svg click event from firing
+      event.stopPropagation();
       setSelectedNode(d);
+      setSelectedLink(null)
+      fetchBlockscoutData(d.address);
     }
 
     function handleLinkClick(event: MouseEvent, d: Link) {
       event.stopPropagation();
-      console.log("handleclick ",d)
+      setSelectedNode(null)
       setSelectedLink(d);
       if (d.transactionHash) {
         fetchTransactionData(d.transactionHash);
       } else {
         console.error('No transaction hash available for this link');
-        // Optionally, show an error message to the user
       }
     }
-    // Add this new event listener
-    svg.on("click", () => setSelectedNode(null));
 
     function drag(simulation: d3.Simulation<Node, undefined>) {
-      function dragstarted(event: d3.D3DragEvent<SVGCircleElement, Node, Node>) {
+      function dragstarted(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
         if (!event.active) simulation.alphaTarget(0.3).restart();
         event.subject.fx = event.subject.x;
         event.subject.fy = event.subject.y;
       }
 
-      function dragged(event: d3.D3DragEvent<SVGCircleElement, Node, Node>) {
+      function dragged(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
         event.subject.fx = event.x;
         event.subject.fy = event.y;
       }
 
-      function dragended(event: d3.D3DragEvent<SVGCircleElement, Node, Node>) {
+      function dragended(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
         if (!event.active) simulation.alphaTarget(0);
         event.subject.fx = null;
         event.subject.fy = null;
       }
 
-      return d3.drag<SVGCircleElement, Node, Node | d3.SubjectPosition>()
+      return d3.drag<SVGGElement, Node>()
         .on("start", dragstarted)
         .on("drag", dragged)
         .on("end", dragended);
@@ -393,21 +353,33 @@ const EthereumViz: React.FC = () => {
 
   return (
     <div className="relative w-full h-[600px]">
-      <svg ref={svgRef} className="w-full h-full"></svg>
-      <InfoPanel 
-        node={selectedNode} 
-        onFetchTransactions={fetchTransactions}
-        blockscoutData={blockscoutData}
-        transactions={transactions}
-        isLoading={isLoadingAdditionalData}
-      />
-       <TransactionInfoPanel
-        transaction={transactionData}
-        onClose={() => {
-          setSelectedLink(null);
-          setTransactionData(null);
-        }}
-      />
+      <svg ref={svgRef} className="w-full h-full">
+      <text x="50%" y="50" textAnchor="middle" className="text-4xl font-bold">
+          Ethereum Data Visualization
+        </text>
+        <g ref={zoomGroupRef} className="zoom-group" />
+      </svg>
+
+      {selectedNode && (
+        <InfoPanel 
+          node={selectedNode} 
+          onFetchTransactions={fetchTransactions}
+          blockscoutData={blockscoutData}
+          transactions={transactions}
+          isLoading={isLoadingAdditionalData}
+          onClose={() => setSelectedNode(null)}
+        />
+      )}
+      
+      {selectedLink && (
+        <TransactionInfoPanel
+          transaction={transactionData}
+          onClose={() => {
+            setSelectedLink(null);
+            setTransactionData(null);
+          }}
+        />
+      )}
     </div>
   );
 };
